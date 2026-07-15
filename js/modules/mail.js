@@ -1,37 +1,76 @@
 // js/modules/mail.js
 import { store } from './store.js';
 import { showToast, closeModals, playNotification } from './ui.js';
+import { mailtm } from '../providers/mailtm.js';
+import { mailgw } from '../providers/mailgw.js';
+import { onesecmail } from '../providers/onesecmail.js';
+import { customapi } from '../providers/customapi.js';
+
+// Daftarkan semua provider yang tersedia
+const providers = {
+    mailtm: mailtm,
+    mailgw: mailgw,
+    onesecmail: onesecmail,
+    customapi: customapi
+};
+
+function getActiveProvider() {
+    return providers[store.currentProvider];
+}
+
+// Mesin otomatis penukar provider jika terjadi kegagalan sistem
+function switchProvider() {
+    const keys = Object.keys(providers);
+    const currentIndex = keys.indexOf(store.currentProvider);
+    const nextIndex = (currentIndex + 1) % keys.length;
+    
+    store.currentProvider = keys[nextIndex];
+    
+    // Reset data sesi karena server tujuan berganti
+    store.currentToken = '';
+    store.currentEmail = '';
+    store.currentPassword = '';
+    store.currentAccountId = '';
+    localStorage.removeItem('tm_email');
+    localStorage.removeItem('tm_pass');
+    store.knownEmailIds.clear();
+    
+    showToast(`Server utama sibuk. Mengalihkan ke ${providers[store.currentProvider].name}...`, "error");
+}
 
 export async function fetchAvailableDomains() {
     const domainSelect = document.getElementById('domainSelect');
-    try {
-        const domainRes = await fetch(`${store.API_BASE}/domains?page=1`);
-        const domainData = await domainRes.json();
-        const domains = domainData['hydra:member'];
-        
-        domainSelect.innerHTML = '';
-        domains.forEach(d => {
-            const opt = document.createElement('option');
-            opt.value = d.domain;
-            opt.innerText = `@${d.domain}`;
-            domainSelect.appendChild(opt);
-        });
-    } catch (err) {
-        domainSelect.innerHTML = '<option value="">Gagal memuat domain</option>';
+    let attempts = 0;
+    const maxAttempts = Object.keys(providers).length;
+
+    while (attempts < maxAttempts) {
+        try {
+            const p = getActiveProvider();
+            const domains = await p.getDomains();
+            
+            domainSelect.innerHTML = '';
+            domains.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.innerText = `@${d}`;
+                domainSelect.appendChild(opt);
+            });
+            return; // Sukses, keluar dari fungsi
+        } catch (err) {
+            attempts++;
+            switchProvider();
+        }
     }
+    domainSelect.innerHTML = '<option value="">Semua jaringan server down</option>';
 }
 
 export async function authenticateAccount(email, password, isNewLogin = false) {
     const emailInput = document.getElementById('emailInput');
     const statusText = document.getElementById('statusText');
+    
     try {
-        const tokenRes = await fetch(`${store.API_BASE}/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: email, password: password })
-        });
-        if (!tokenRes.ok) throw new Error("Unauthorized");
-        const tokenData = await tokenRes.json();
+        const p = getActiveProvider();
+        const tokenData = await p.getToken(email, password);
         
         store.currentToken = tokenData.token;
         store.currentAccountId = tokenData.id;
@@ -44,7 +83,7 @@ export async function authenticateAccount(email, password, isNewLogin = false) {
         emailInput.value = store.currentEmail;
         document.getElementById('displayCurrentEmail').innerText = store.currentEmail;
         document.getElementById('displayCurrentPassword').innerText = store.currentPassword;
-        statusText.innerText = "Terhubung! Menunggu pesan masuk...";
+        statusText.innerText = `Terhubung via ${p.name}! Menunggu pesan...`;
         
         if(isNewLogin) store.knownEmailIds.clear();
         checkInbox();
@@ -62,36 +101,39 @@ export async function generateNewEmail(isManual = false) {
     document.getElementById('statusText').innerText = "Mendaftarkan akun...";
     showEmptyInbox();
     
-    try {
-        let domain = document.getElementById('domainSelect').value;
-        if (!domain) {
-            await fetchAvailableDomains();
-            domain = document.getElementById('domainSelect').value;
+    let attempts = 0;
+    const maxAttempts = Object.keys(providers).length;
+
+    while (attempts < maxAttempts) {
+        try {
+            const p = getActiveProvider();
+            let domain = document.getElementById('domainSelect').value;
+            if (!domain) {
+                await fetchAvailableDomains();
+                domain = document.getElementById('domainSelect').value;
+            }
+
+            let prefix = document.getElementById('customPrefix').value.trim();
+            if (!prefix) prefix = Math.random().toString(36).substring(2, 10);
+            prefix = prefix.replace(/[^a-zA-Z0-9.\-_]/g, '');
+
+            const newEmail = `${prefix}@${domain}`;
+            const newPass = Math.random().toString(36).slice(-8) + "A1!";
+
+            await p.createAccount(newEmail, newPass);
+            await authenticateAccount(newEmail, newPass, true);
+            
+            if (isManual) showToast(`Email berhasil dibuat di ${p.name}!`);
+            document.getElementById('customPrefix').value = '';
+            return;
+        } catch (err) {
+            attempts++;
+            switchProvider();
+            await fetchAvailableDomains(); // Ambil domain baru dari provider baru
         }
-
-        let prefix = document.getElementById('customPrefix').value.trim();
-        if (!prefix) prefix = Math.random().toString(36).substring(2, 10);
-        prefix = prefix.replace(/[^a-zA-Z0-9.\-_]/g, '');
-
-        const newEmail = `${prefix}@${domain}`;
-        const newPass = Math.random().toString(36).slice(-8) + "A1!";
-
-        const res = await fetch(`${store.API_BASE}/accounts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: newEmail, password: newPass })
-        });
-
-        if (!res.ok) throw new Error("Gagal membuat email");
-
-        await authenticateAccount(newEmail, newPass, true);
-        if (isManual) showToast(`Email ${newEmail} berhasil dibuat!`);
-        document.getElementById('customPrefix').value = '';
-    } catch (err) {
-        document.getElementById('statusText').innerText = "Gagal. Nama mungkin sudah dipakai.";
-        if (isManual) showToast("Nama email sudah digunakan atau tidak valid!", "error");
-        else generateNewEmail();
     }
+    document.getElementById('statusText').innerText = "Semua server gagal merespon.";
+    showToast("Gagal total membuat email di semua provider!", "error");
 }
 
 export async function loginAccount() {
@@ -112,20 +154,18 @@ export async function loginAccount() {
 }
 
 export async function deleteAccount() {
-    if (!confirm("PERINGATAN: Ini akan menghapus alamat email dan SEMUA pesan Anda secara permanen. Lanjutkan?")) return;
+    if (!confirm("Hapus akun secara permanen?")) return;
     showToast("Menghancurkan akun...");
     try {
-        const res = await fetch(`${store.API_BASE}/accounts/${store.currentAccountId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${store.currentToken}` }
-        });
+        const p = getActiveProvider();
+        const res = await p.deleteAccount(store.currentToken, store.currentAccountId);
         if (res.ok || res.status === 204) {
             showToast("Akun berhasil dihancurkan!");
             closeModals();
             localStorage.removeItem('tm_email');
             localStorage.removeItem('tm_pass');
             generateNewEmail();
-        } else { throw new Error("Gagal"); }
+        } else { throw new Error(); }
     } catch (err) { showToast("Gagal menghancurkan akun!", "error"); }
 }
 
@@ -143,9 +183,8 @@ export function showEmptyInbox() {
 export async function checkInbox() {
     if(!store.currentToken) return;
     try {
-        const res = await fetch(`${store.API_BASE}/messages`, { headers: { 'Authorization': `Bearer ${store.currentToken}` } });
-        const data = await res.json();
-        const emails = data['hydra:member'];
+        const p = getActiveProvider();
+        const emails = await p.getMessages(store.currentToken);
         
         let hasNew = false;
         emails.forEach(e => {
@@ -154,7 +193,9 @@ export async function checkInbox() {
 
         if (hasNew && emails.length > 0) playNotification(emails[0].from.address, emails[0].subject);
         renderInbox(emails);
-    } catch (err) {}
+    } catch (err) {
+        // Abaikan error background polling senyap untuk menjaga kenyamanan UX
+    }
 }
 
 export function renderInbox(emails) {
@@ -191,8 +232,8 @@ export async function readEmail(id) {
     inboxContainer.innerHTML = `<div class="p-16 text-center text-primary"><i class="ph ph-spinner-gap animate-spin text-4xl mx-auto"></i><p class="mt-4">Memuat pesan & lampiran...</p></div>`;
     
     try {
-        const res = await fetch(`${store.API_BASE}/messages/${id}`, { headers: { 'Authorization': `Bearer ${store.currentToken}` }});
-        const msg = await res.json();
+        const p = getActiveProvider();
+        const msg = await p.getMessage(store.currentToken, id);
         const bodyContent = msg.html && msg.html.length > 0 ? msg.html[0] : (msg.text ? msg.text.replace(/\n/g, '<br>') : 'Pesan kosong');
 
         let attachmentsHtml = '';
@@ -234,7 +275,8 @@ export async function readEmail(id) {
 export async function downloadEml(id, safeSubject) {
     showToast("Mengunduh EML...");
     try {
-        const res = await fetch(`${store.API_BASE}/messages/${id}/download`, { headers: { 'Authorization': `Bearer ${store.currentToken}` } });
+        const p = getActiveProvider();
+        const res = await p.downloadEml(store.currentToken, id);
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -245,22 +287,24 @@ export async function downloadEml(id, safeSubject) {
 }
 
 export async function deleteEmail(id) {
-    if (!confirm("Apakah Anda yakin ingin menghapus pesan ini secara permanen?")) return;
+    if (!confirm("Hapus pesan ini secara permanen?")) return;
     showToast("Menghapus pesan...");
     try {
-        const res = await fetch(`${store.API_BASE}/messages/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${store.currentToken}` } });
+        const p = getActiveProvider();
+        const res = await p.deleteMessage(store.currentToken, id);
         if (res.ok || res.status === 204) {
-            showToast("Pesan berhasil dimusnahkan!");
+            showToast("Pesan berhasil dihapus!");
             store.knownEmailIds.delete(id); 
             backToInbox();
-        } else { throw new Error("Gagal"); }
-    } catch (err) { showToast("Gagal menghapus pesan dari server!", "error"); }
+        } else { throw new Error(); }
+    } catch (err) { showToast("Gagal menghapus pesan!", "error"); }
 }
 
 export async function downloadAttachment(msgId, attId, filename) {
     showToast("Memproses unduhan...");
     try {
-        const res = await fetch(`${store.API_BASE}/messages/${msgId}/attachments/${attId}`, { headers: { 'Authorization': `Bearer ${store.currentToken}` } });
+        const p = getActiveProvider();
+        const res = await p.downloadAttachment(store.currentToken, msgId, attId);
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');

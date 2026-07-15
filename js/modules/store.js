@@ -1,7 +1,7 @@
 // js/modules/store.js
 
 export const store = {
-    API_BASE: 'https://api.mail.tm',
+    currentProvider: 'mailtm', // Default menggunakan 'mailtm', cadangannya 'mailgw'
     currentEmail: '',
     currentPassword: '',
     currentToken: '',
