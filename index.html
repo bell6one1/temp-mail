@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TempMailX - Email Sementara Modern</title>
+    
+    <!-- Memanggil favicon dari local storage/folder yang sama -->
+    <link rel="icon" type="image/x-icon" href="./favicon.ico">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0ea5e9', // Warna biru modern ala Internxt
+                        darkbg: '#0f172a',
+                        darkcard: '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Phosphor Icons (Untuk Icon yang cantik) -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-darkbg dark:text-gray-200 transition-colors duration-300 min-h-screen font-sans flex flex-col">
+
+    <!-- Navbar -->
+    <header class="w-full p-4 md:px-8 flex justify-between items-center bg-white dark:bg-darkcard shadow-sm transition-colors">
+        <div class="flex items-center gap-2">
+            <i class="ph-fill ph-envelope-simple text-primary text-3xl"></i>
+            <h1 class="text-xl font-bold tracking-tight">TempMail<span class="text-primary">X</span></h1>
+        </div>
+        <button id="themeToggle" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition">
+            <i class="ph ph-moon text-xl hidden dark:block" id="iconSun"></i>
+            <i class="ph ph-sun text-xl block dark:hidden" id="iconMoon"></i>
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-10 max-w-4xl flex flex-col items-center">
+        
+        <div class="text-center mb-8">
+            <h2 class="text-3xl md:text-5xl font-extrabold mb-4">Alamat Email Sementara Anda</h2>
+            <p class="text-gray-500 dark:text-gray-400">Lindungi email asli Anda dari spam, bot, dan phising. Bebas, aman, dan instan.</p>
+        </div>
+
+        <!-- Email Address Card -->
+        <div class="w-full bg-white dark:bg-darkcard shadow-xl rounded-2xl p-6 md:p-8 mb-10 border border-gray-100 dark:border-gray-700">
+            <div class="flex flex-col md:flex-row items-center gap-4">
+                <div class="relative w-full">
+                    <input type="text" id="emailInput" readonly value="Memuat email..." 
+                        class="w-full text-center md:text-left text-xl md:text-2xl font-mono bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl py-4 px-4 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-primary">
+                </div>
+                <div class="flex gap-2 w-full md:w-auto">
+                    <button onclick="copyEmail()" class="flex-1 md:flex-none flex justify-center items-center gap-2 bg-primary hover:bg-sky-600 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg shadow-sky-500/30">
+                        <i class="ph ph-copy text-xl"></i> <span id="copyText">Salin</span>
+                    </button>
+                    <button onclick="generateNewEmail()" class="flex-1 md:flex-none flex justify-center items-center p-4 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition" title="Ganti Email">
+                        <i class="ph ph-arrows-clockwise text-xl"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mt-6 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                <i class="ph ph-spinner-gap animate-spin"></i>
+                <span id="refreshStatus">Menunggu email masuk... (Auto-refresh 10s)</span>
+            </div>
+        </div>
+
+        <!-- Inbox Section -->
+        <div class="w-full">
+            <h3 class="text-2xl font-bold mb-4 flex items-center gap-2">
+                <i class="ph ph-inbox"></i> Kotak Masuk
+            </h3>
+            <div class="bg-white dark:bg-darkcard rounded-2xl shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden">
+                <div id="inbox" class="divide-y divide-gray-100 dark:divide-gray-700">
+                    <!-- Pesan Kosong State -->
+                    <div class="p-10 text-center text-gray-500 dark:text-gray-400 flex flex-col items-center">
+                        <i class="ph ph-envelope-open text-6xl mb-3 opacity-50"></i>
+                        <p>Kotak masuk Anda kosong</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="text-center p-6 text-sm text-gray-500 dark:text-gray-400">
+        &copy; 2024 TempMailX. Built for privacy. API by 1secmail.
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- 1. DARK/LIGHT MODE TOGGLE ---
+        const themeToggleBtn = document.getElementById('themeToggle');
+        const html = document.documentElement;
+        const iconSun = document.getElementById('iconSun');
+        const iconMoon = document.getElementById('iconMoon');
+
+        // Cek LocalStorage untuk tema
+        if (localStorage.getItem('theme') === 'light') {
+            html.classList.remove('dark');
+        }
+
+        themeToggleBtn.addEventListener('click', () => {
+            html.classList.toggle('dark');
+            if (html.classList.contains('dark')) {
+                localStorage.setItem('theme', 'dark');
+            } else {
+                localStorage.setItem('theme', 'light');
+            }
+        });
+
+        // --- 2. TEMP MAIL API LOGIC ---
+        const API_BASE = 'https://www.1secmail.com/api/v1/';
+        let currentEmail = '';
+        let currentLogin = '';
+        let currentDomain = '';
+        let checkInterval;
+
+        const emailInput = document.getElementById('emailInput');
+        const inboxContainer = document.getElementById('inbox');
+        const copyText = document.getElementById('copyText');
+
+        // Fungsi membuat email baru
+        async function generateNewEmail() {
+            emailInput.value = "Membuat alamat...";
+            clearInterval(checkInterval);
+            inboxContainer.innerHTML = `
+                <div class="p-10 text-center text-gray-500 flex flex-col items-center">
+                    <i class="ph ph-envelope-open text-6xl mb-3 opacity-50"></i>
+                    <p>Kotak masuk Anda kosong</p>
+                </div>`;
+            
+            try {
+                const res = await fetch(`${API_BASE}?action=genRandomMailbox&count=1`);
+                const data = await res.json();
+                currentEmail = data[0];
+                const parts = currentEmail.split('@');
+                currentLogin = parts[0];
+                currentDomain = parts[1];
+                
+                emailInput.value = currentEmail;
+                
+                // Mulai cek inbox
+                checkInbox();
+                checkInterval = setInterval(checkInbox, 10000); // Cek setiap 10 detik
+            } catch (err) {
+                emailInput.value = "Gagal memuat API!";
+                console.error(err);
+            }
+        }
+
+        // Fungsi cek kotak masuk
+        async function checkInbox() {
+            if(!currentLogin) return;
+            try {
+                const res = await fetch(`${API_BASE}?action=getMessages&login=${currentLogin}&domain=${currentDomain}`);
+                const emails = await res.json();
+                renderInbox(emails);
+            } catch (err) {
+                console.error("Gagal cek inbox", err);
+            }
+        }
+
+        // Render daftar email
+        function renderInbox(emails) {
+            if (emails.length === 0) return;
+            
+            let html = '';
+            emails.forEach(email => {
+                html += `
+                    <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2" onclick="readEmail(${email.id})">
+                        <div class="flex items-start gap-3">
+                            <div class="bg-primary/10 text-primary p-2 rounded-full mt-1">
+                                <i class="ph-fill ph-user text-xl"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-gray-800 dark:text-gray-100">${email.from}</h4>
+                                <p class="text-sm font-medium text-gray-800 dark:text-gray-300">${email.subject}</p>
+                            </div>
+                        </div>
+                        <div class="text-xs text-gray-400 whitespace-nowrap">
+                            ${email.date}
+                        </div>
+                    </div>
+                `;
+            });
+            inboxContainer.innerHTML = html;
+        }
+
+        // Baca isi email
+        async function readEmail(id) {
+            inboxContainer.innerHTML = `<div class="p-8 text-center"><i class="ph ph-spinner-gap animate-spin text-3xl"></i> Memuat isi pesan...</div>`;
+            try {
+                const res = await fetch(`${API_BASE}?action=readMessage&login=${currentLogin}&domain=${currentDomain}&id=${id}`);
+                const message = await res.json();
+                
+                inboxContainer.innerHTML = `
+                    <div class="p-6">
+                        <button onclick="checkInbox()" class="text-primary hover:underline flex items-center gap-1 mb-4">
+                            <i class="ph ph-arrow-left"></i> Kembali ke Kotak Masuk
+                        </button>
+                        <h2 class="text-2xl font-bold mb-2">${message.subject}</h2>
+                        <div class="text-sm text-gray-500 mb-6 flex justify-between border-b dark:border-gray-700 pb-4">
+                            <span>Dari: <b>${message.from}</b></span>
+                            <span>${message.date}</span>
+                        </div>
+                        <div class="prose dark:prose-invert max-w-none break-words">
+                            ${message.htmlBody || message.textBody.replace(/\n/g, '<br>')}
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Fitur Salin Email
+        function copyEmail() {
+            navigator.clipboard.writeText(currentEmail).then(() => {
+                copyText.innerText = "Tersalin!";
+                setTimeout(() => copyText.innerText = "Salin", 2000);
+            });
+        }
+
+        // Inisialisasi saat pertama kali web dibuka
+        generateNewEmail();
+    </script>
+</body>
+</html>
