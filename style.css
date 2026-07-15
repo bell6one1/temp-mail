@@ -1,0 +1,32 @@
+/* style.css */
+#toast { 
+    visibility: hidden; 
+    opacity: 0; 
+    transition: opacity 0.3s, transform 0.3s; 
+    transform: translateY(20px); 
+}
+
+#toast.show { 
+    visibility: visible; 
+    opacity: 1; 
+    transform: translateY(0); 
+}
+
+.modal { 
+    display: none; 
+}
+
+.modal.active { 
+    display: flex; 
+}
+
+/* Memastikan gambar dalam HTML email merespons layar (tidak melebar) */
+.email-body img { 
+    max-width: 100%; 
+    height: auto; 
+}
+
+.email-body a { 
+    color: #0ea5e9; 
+    text-decoration: underline; 
+}
