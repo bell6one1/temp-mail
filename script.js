@@ -1,6 +1,5 @@
 // script.js
 
-// Tema Terang/Gelap
 const html = document.documentElement;
 if (localStorage.getItem('theme') === 'light') html.classList.remove('dark');
 document.getElementById('themeToggle').addEventListener('click', () => {
@@ -9,7 +8,7 @@ document.getElementById('themeToggle').addEventListener('click', () => {
 });
 
 const API_BASE = 'https://api.mail.tm';
-let currentEmail = '', currentPassword = '', currentToken = '';
+let currentEmail = '', currentPassword = '', currentToken = '', currentAccountId = '';
 let countdownInterval;
 let knownEmailIds = new Set();
 let isNotificationsEnabled = false;
@@ -18,42 +17,86 @@ const emailInput = document.getElementById('emailInput');
 const inboxContainer = document.getElementById('inbox');
 const statusText = document.getElementById('statusText');
 const refreshProgress = document.getElementById('refreshProgress');
+const domainSelect = document.getElementById('domainSelect');
+const customPrefixInput = document.getElementById('customPrefix');
 
 function closeModals() {
     document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
 }
 
-async function initApp() {
-    const savedEmail = localStorage.getItem('tm_email');
-    const savedPass = localStorage.getItem('tm_pass');
-    if (savedEmail && savedPass) await authenticateAccount(savedEmail, savedPass, false);
-    else await generateNewEmail();
-}
-
-async function generateNewEmail(forceNew = false) {
-    clearInterval(countdownInterval);
-    emailInput.value = "Membuat alamat...";
-    statusText.innerText = "Mendaftarkan akun baru...";
-    showEmptyInbox();
-    
+async function fetchAvailableDomains() {
     try {
         const domainRes = await fetch(`${API_BASE}/domains?page=1`);
         const domainData = await domainRes.json();
-        const domain = domainData['hydra:member'][0].domain;
+        const domains = domainData['hydra:member'];
+        
+        domainSelect.innerHTML = '';
+        domains.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.domain;
+            opt.innerText = `@${d.domain}`;
+            domainSelect.appendChild(opt);
+        });
+    } catch (err) {
+        domainSelect.innerHTML = '<option value="">Gagal memuat domain</option>';
+    }
+}
 
-        const newEmail = `${Math.random().toString(36).substring(2, 10)}@${domain}`;
+async function initApp() {
+    await fetchAvailableDomains();
+    const savedEmail = localStorage.getItem('tm_email');
+    const savedPass = localStorage.getItem('tm_pass');
+    
+    if (savedEmail && savedPass) {
+        const savedDomain = savedEmail.split('@')[1];
+        if (savedDomain) domainSelect.value = savedDomain;
+        await authenticateAccount(savedEmail, savedPass, false);
+    } else {
+        await generateNewEmail();
+    }
+}
+
+// Fitur Baru: Mendukung Custom Prefix
+async function generateNewEmail(isManual = false) {
+    clearInterval(countdownInterval);
+    emailInput.value = "Membuat alamat...";
+    statusText.innerText = "Mendaftarkan akun...";
+    showEmptyInbox();
+    
+    try {
+        let domain = domainSelect.value;
+        if (!domain) {
+            await fetchAvailableDomains();
+            domain = domainSelect.value;
+        }
+
+        // Ambil dari input custom, jika kosong gunakan acak
+        let prefix = customPrefixInput.value.trim();
+        if (!prefix) {
+            prefix = Math.random().toString(36).substring(2, 10);
+        }
+        
+        // Validasi agar hanya huruf, angka, titik, strip, dan underscore yang lolos
+        prefix = prefix.replace(/[^a-zA-Z0-9.\-_]/g, '');
+
+        const newEmail = `${prefix}@${domain}`;
         const newPass = Math.random().toString(36).slice(-8) + "A1!";
 
-        await fetch(`${API_BASE}/accounts`, {
+        const res = await fetch(`${API_BASE}/accounts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ address: newEmail, password: newPass })
         });
 
+        if (!res.ok) throw new Error("Gagal membuat email");
+
         await authenticateAccount(newEmail, newPass, true);
-        if (forceNew) showToast("Email baru berhasil dibuat!");
+        if (isManual) showToast(`Email ${newEmail} berhasil dibuat!`);
+        customPrefixInput.value = ''; // Reset input
     } catch (err) {
-        statusText.innerText = "Gagal membuat email. Coba lagi.";
+        statusText.innerText = "Gagal. Nama mungkin sudah dipakai.";
+        if (isManual) showToast("Nama email sudah digunakan atau tidak valid!", "error");
+        else generateNewEmail(); // Jika generate otomatis gagal (sangat jarang), coba lagi
     }
 }
 
@@ -65,8 +108,13 @@ async function loginAccount() {
     closeModals();
     emailInput.value = "Memeriksa kredensial...";
     const success = await authenticateAccount(email, pass, true);
-    if(success) showToast("Berhasil login!");
-    else showToast("Login gagal! Sesi mungkin kedaluwarsa.", "error");
+    if(success) {
+        const loggedDomain = email.split('@')[1];
+        if (loggedDomain) domainSelect.value = loggedDomain;
+        showToast("Berhasil login!");
+    } else {
+        showToast("Login gagal! Sesi mungkin kedaluwarsa.", "error");
+    }
 }
 
 async function authenticateAccount(email, password, isNewLogin = false) {
@@ -80,6 +128,7 @@ async function authenticateAccount(email, password, isNewLogin = false) {
         const tokenData = await tokenRes.json();
         
         currentToken = tokenData.token;
+        currentAccountId = tokenData.id; // Disimpan untuk fungsi Hancurkan Akun
         currentEmail = email;
         currentPassword = password;
         
@@ -99,6 +148,13 @@ async function authenticateAccount(email, password, isNewLogin = false) {
         if (!isNewLogin) generateNewEmail();
         return false;
     }
+}
+
+// Fitur Baru: Refresh Manual
+function manualRefresh() {
+    showToast("Memperbarui kotak masuk...");
+    checkInbox();
+    startCountdown();
 }
 
 function showEmptyInbox() {
@@ -163,10 +219,8 @@ async function readEmail(id) {
         const res = await fetch(`${API_BASE}/messages/${id}`, { headers: { 'Authorization': `Bearer ${currentToken}` }});
         const msg = await res.json();
         
-        // Menentukan Body HTML vs Teks Biasa
         const bodyContent = msg.html && msg.html.length > 0 ? msg.html[0] : (msg.text ? msg.text.replace(/\n/g, '<br>') : 'Pesan kosong');
 
-        // Render Lampiran Jika Ada
         let attachmentsHtml = '';
         if (msg.hasAttachments && msg.attachments && msg.attachments.length > 0) {
             attachmentsHtml = `<div class="mt-8 border-t dark:border-gray-700 pt-6">
@@ -186,34 +240,118 @@ async function readEmail(id) {
                             <p class="text-xs text-gray-400 mt-1">${sizeKb} KB</p>
                         </div>
                         <i class="ph ph-download-simple ml-2 text-gray-400"></i>
-                    </button>
-                `;
+                    </button>`;
             });
             attachmentsHtml += `</div></div>`;
         }
 
+        // Fitur Baru: Ditambahkan tombol Download EML di samping tombol Hapus
+        const safeSubject = (msg.subject || 'pesan').replace(/[^a-zA-Z0-9]/g, '_');
         inboxContainer.innerHTML = `
             <div class="p-6 md:p-8 email-container">
-                <button onclick="backToInbox()" class="text-primary hover:bg-primary/10 px-4 py-2 rounded-lg transition flex items-center gap-2 font-medium mb-6">
-                    <i class="ph ph-arrow-left"></i> Kembali ke Kotak Masuk
-                </button>
+                <div class="flex justify-between items-center mb-6 gap-2 flex-wrap">
+                    <button onclick="backToInbox()" class="text-primary hover:bg-primary/10 px-4 py-2 rounded-lg transition flex items-center gap-2 font-medium">
+                        <i class="ph ph-arrow-left"></i> Kembali
+                    </button>
+                    <div class="flex gap-2">
+                        <button onclick="downloadEml('${msg.id}', '${safeSubject}')" class="text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 px-4 py-2 rounded-lg transition flex items-center gap-2 font-medium">
+                            <i class="ph ph-download-simple"></i> .EML
+                        </button>
+                        <button onclick="deleteEmail('${msg.id}')" class="text-red-500 hover:bg-red-500/10 px-4 py-2 rounded-lg transition flex items-center gap-2 font-medium">
+                            <i class="ph ph-trash"></i> Hapus
+                        </button>
+                    </div>
+                </div>
                 <h2 class="text-2xl font-extrabold mb-4">${msg.subject || '(Tanpa Subjek)'}</h2>
                 <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl mb-6 flex flex-col md:flex-row justify-between md:items-center gap-2 border border-gray-100 dark:border-gray-700">
                     <div><span class="text-sm text-gray-500 block">Dari:</span><span class="font-bold">${msg.from.address}</span></div>
                     <div class="text-sm text-gray-500">${new Date(msg.createdAt).toLocaleString('id-ID')}</div>
                 </div>
                 
-                <!-- Area Pesan Utama HTML yang merender tombol, gambar inline, dll -->
                 <div class="email-body prose dark:prose-invert max-w-none break-words bg-white dark:bg-darkcard p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-inner overflow-x-auto">
                     ${bodyContent}
                 </div>
                 
-                <!-- Area Lampiran yang bisa diunduh -->
                 ${attachmentsHtml}
             </div>`;
     } catch (err) {
         inboxContainer.innerHTML = `<div class="p-8 text-center text-red-500">Gagal memuat pesan.</div>`;
     }
+}
+
+// Fitur Baru: Mengunduh EML
+async function downloadEml(id, safeSubject) {
+    showToast("Mengunduh EML...");
+    try {
+        const res = await fetch(`${API_BASE}/messages/${id}/download`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${safeSubject}.eml`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+    } catch (err) {
+        showToast("Gagal mengunduh file EML", "error");
+    }
+}
+
+async function deleteEmail(id) {
+    if (!confirm("Apakah Anda yakin ingin menghapus pesan ini secara permanen?")) return;
+    
+    showToast("Menghapus pesan...");
+    try {
+        const res = await fetch(`${API_BASE}/messages/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        
+        if (res.ok || res.status === 204) {
+            showToast("Pesan berhasil dimusnahkan!");
+            knownEmailIds.delete(id); 
+            backToInbox();
+        } else {
+            throw new Error("Gagal");
+        }
+    } catch (err) {
+        showToast("Gagal menghapus pesan dari server!", "error");
+    }
+}
+
+// Fitur Baru: Hancurkan Akun
+async function deleteAccount() {
+    if (!confirm("PERINGATAN: Ini akan menghapus alamat email dan SEMUA pesan Anda secara permanen. Lanjutkan?")) return;
+    
+    showToast("Menghancurkan akun...");
+    try {
+        const res = await fetch(`${API_BASE}/accounts/${currentAccountId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
+        
+        if (res.ok || res.status === 204) {
+            showToast("Akun berhasil dihancurkan!");
+            closeModals();
+            localStorage.removeItem('tm_email');
+            localStorage.removeItem('tm_pass');
+            generateNewEmail();
+        } else {
+            throw new Error("Gagal");
+        }
+    } catch (err) {
+        showToast("Gagal menghancurkan akun!", "error");
+    }
+}
+
+// Fitur Baru: Tampilkan QR Code via API eksternal yang ringan
+function showQRCode() {
+    if(!currentEmail) return;
+    document.getElementById('qrImage').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(currentEmail)}`;
+    document.getElementById('qrModal').classList.add('active');
 }
 
 async function downloadAttachment(msgId, attId, filename) {
