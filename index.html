@@ -3,63 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TempMailX - Email Sementara Modern</title>
+    <title>TempMailX - Email Sementara Ultimate</title>
     
     <link rel="icon" type="image/x-icon" href="./favicon.ico">
-    
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
-                extend: {
-                    colors: {
-                        primary: '#0ea5e9',
-                        darkbg: '#0f172a',
-                        darkcard: '#1e293b'
-                    }
-                }
+                extend: { colors: { primary: '#0ea5e9', darkbg: '#0f172a', darkcard: '#1e293b' } }
             }
         }
     </script>
-    
-    <!-- Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-
-    <!-- Custom CSS untuk animasi Progress Bar & Toast -->
     <style>
-        #toast {
-            visibility: hidden;
-            opacity: 0;
-            transition: opacity 0.3s, transform 0.3s;
-            transform: translateY(20px);
-        }
-        #toast.show {
-            visibility: visible;
-            opacity: 1;
-            transform: translateY(0);
-        }
+        #toast { visibility: hidden; opacity: 0; transition: opacity 0.3s, transform 0.3s; transform: translateY(20px); }
+        #toast.show { visibility: visible; opacity: 1; transform: translateY(0); }
+        .modal { display: none; }
+        .modal.active { display: flex; }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 dark:bg-darkbg dark:text-gray-200 transition-colors duration-300 min-h-screen font-sans flex flex-col relative">
 
+    <audio id="notifySound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
     <!-- Toast Notification -->
     <div id="toast" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-2 z-50">
         <i class="ph-fill ph-check-circle text-green-400 text-xl"></i>
-        <span id="toastMessage">Email berhasil disalin!</span>
+        <span id="toastMessage">Berhasil!</span>
+    </div>
+
+    <!-- Modal Manajemen Akun -->
+    <div id="accountModal" class="modal fixed inset-0 bg-black/60 z-50 items-center justify-center backdrop-blur-sm">
+        <div class="bg-white dark:bg-darkcard p-8 rounded-2xl shadow-2xl flex flex-col max-w-md w-full mx-4 relative border border-gray-100 dark:border-gray-700">
+            <button onclick="closeModals()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-700 dark:hover:text-white transition">
+                <i class="ph ph-x text-2xl"></i>
+            </button>
+            
+            <h3 class="text-xl font-bold mb-4 border-b pb-2 dark:border-gray-700">Detail Akun Saat Ini</h3>
+            <p class="text-sm text-gray-500 mb-2">Simpan data ini jika Anda ingin mengakses email ini di perangkat lain atau di kemudian waktu.</p>
+            <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg mb-2 text-sm font-mono flex justify-between items-center">
+                <span id="displayCurrentEmail" class="truncate">Memuat...</span>
+                <button onclick="copyText('displayCurrentEmail')" class="text-primary hover:text-sky-600"><i class="ph ph-copy"></i></button>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg mb-6 text-sm font-mono flex justify-between items-center">
+                <span id="displayCurrentPassword" class="truncate">Memuat...</span>
+                <button onclick="copyText('displayCurrentPassword')" class="text-primary hover:text-sky-600"><i class="ph ph-copy"></i></button>
+            </div>
+
+            <h3 class="text-xl font-bold mb-4 border-b pb-2 dark:border-gray-700">Pulihkan / Login Email Lama</h3>
+            <div class="flex flex-col gap-3">
+                <input type="text" id="loginEmail" placeholder="Alamat Email (contoh@domain.com)" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-primary">
+                <input type="password" id="loginPassword" placeholder="Kata Sandi" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 text-gray-700 dark:text-gray-200 focus:outline-none focus:border-primary">
+                <button onclick="loginAccount()" class="w-full bg-primary hover:bg-sky-600 text-white font-bold py-3 rounded-lg transition mt-2">
+                    Masuk & Pulihkan
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Navbar -->
-    <header class="w-full p-4 md:px-8 flex justify-between items-center bg-white dark:bg-darkcard shadow-sm transition-colors z-10 relative">
+    <header class="w-full p-4 md:px-8 flex justify-between items-center bg-white dark:bg-darkcard shadow-sm transition-colors z-10 relative border-b border-gray-100 dark:border-gray-800">
         <div class="flex items-center gap-2">
             <i class="ph-fill ph-envelope-simple text-primary text-3xl"></i>
             <h1 class="text-xl font-bold tracking-tight">TempMail<span class="text-primary">X</span></h1>
         </div>
-        <button id="themeToggle" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition">
-            <i class="ph ph-moon text-xl hidden dark:block" id="iconSun"></i>
-            <i class="ph ph-sun text-xl block dark:hidden" id="iconMoon"></i>
-        </button>
+        <div class="flex gap-2">
+            <button onclick="requestNotificationPermission()" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition">
+                <i class="ph ph-bell-ringing text-xl text-yellow-500" id="bellIcon"></i>
+            </button>
+            <button id="themeToggle" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition">
+                <i class="ph ph-moon text-xl hidden dark:block"></i>
+                <i class="ph ph-sun text-xl block dark:hidden"></i>
+            </button>
+        </div>
     </header>
 
     <!-- Main Content -->
@@ -67,26 +84,30 @@
         
         <div class="text-center mb-8">
             <h2 class="text-3xl md:text-5xl font-extrabold mb-4">Alamat Email Sementara Anda</h2>
-            <p class="text-gray-500 dark:text-gray-400">Lindungi email asli Anda dari spam, bot, dan phising. Bebas, aman, dan instan.</p>
+            <p class="text-gray-500 dark:text-gray-400">Anti-spam, sesi otomatis tersimpan, dan aman sepenuhnya.</p>
         </div>
 
         <!-- Email Address Card -->
         <div class="w-full bg-white dark:bg-darkcard shadow-xl rounded-2xl p-6 md:p-8 mb-10 border border-gray-100 dark:border-gray-700 relative overflow-hidden">
-            <!-- Progress bar background untuk auto-refresh -->
             <div class="absolute top-0 left-0 h-1 bg-gray-100 dark:bg-gray-700 w-full">
                 <div id="refreshProgress" class="h-full bg-primary transition-all duration-1000 ease-linear w-0"></div>
             </div>
 
-            <div class="flex flex-col md:flex-row items-center gap-4 mt-2">
+            <div class="flex flex-col md:flex-row items-center gap-4 mt-4">
                 <div class="relative w-full">
-                    <input type="text" id="emailInput" readonly value="Menyambungkan ke server..." 
+                    <input type="text" id="emailInput" readonly value="Menyambungkan..." 
                         class="w-full text-center md:text-left text-xl md:text-2xl font-mono bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl py-4 px-4 text-gray-700 dark:text-gray-200 focus:outline-none transition-colors">
                 </div>
-                <div class="flex gap-2 w-full md:w-auto">
-                    <button onclick="copyEmail()" class="flex-1 md:flex-none flex justify-center items-center gap-2 bg-primary hover:bg-sky-600 text-white px-6 py-4 rounded-xl font-semibold transition shadow-lg shadow-sky-500/30">
-                        <i class="ph ph-copy text-xl"></i> Salin
+                
+                <!-- Action Buttons -->
+                <div class="flex flex-wrap md:flex-nowrap gap-2 w-full md:w-auto">
+                    <button onclick="copyText('emailInput', true)" class="flex-1 md:flex-none flex justify-center items-center gap-2 bg-primary hover:bg-sky-600 text-white px-5 py-4 rounded-xl font-semibold transition shadow-lg shadow-sky-500/30">
+                        <i class="ph ph-copy text-xl"></i> <span class="hidden md:inline">Salin</span>
                     </button>
-                    <button onclick="generateNewEmail()" class="flex-1 md:flex-none flex justify-center items-center p-4 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition" title="Ganti Email Baru">
+                    <button onclick="document.getElementById('accountModal').classList.add('active')" class="flex-1 md:flex-none flex justify-center items-center p-4 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition text-gray-700 dark:text-white" title="Manajemen Akun & Pemulihan">
+                        <i class="ph ph-user-circle text-xl"></i>
+                    </button>
+                    <button onclick="generateNewEmail(true)" class="flex-1 md:flex-none flex justify-center items-center p-4 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition text-red-500 hover:text-red-600 dark:hover:text-red-400" title="Hapus & Buat Email Baru">
                         <i class="ph ph-arrows-clockwise text-xl"></i>
                     </button>
                 </div>
@@ -106,119 +127,152 @@
                 </h3>
                 <span id="emailCount" class="text-sm bg-primary/20 text-primary px-3 py-1 rounded-full font-semibold hidden">0 Pesan</span>
             </div>
-
             <div class="bg-white dark:bg-darkcard rounded-2xl shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden min-h-[300px]">
-                <div id="inbox" class="divide-y divide-gray-100 dark:divide-gray-700">
-                    <!-- Placeholder Loading -->
-                </div>
+                <div id="inbox" class="divide-y divide-gray-100 dark:divide-gray-700"></div>
             </div>
         </div>
     </main>
 
     <footer class="text-center p-6 text-sm text-gray-500 dark:text-gray-400">
-        &copy; 2024 TempMailX. Built with Tailwind & Mail.tm API. Deployed on GitHub Pages.
+        &copy; 2024 TempMailX Ultimate.
     </footer>
 
     <!-- JavaScript Logic -->
     <script>
-        // --- 1. DARK/LIGHT MODE TOGGLE ---
-        const themeToggleBtn = document.getElementById('themeToggle');
         const html = document.documentElement;
-
-        if (localStorage.getItem('theme') === 'light') {
-            html.classList.remove('dark');
-        }
-
-        themeToggleBtn.addEventListener('click', () => {
+        if (localStorage.getItem('theme') === 'light') html.classList.remove('dark');
+        document.getElementById('themeToggle').addEventListener('click', () => {
             html.classList.toggle('dark');
             localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
         });
 
-        // --- 2. MAIL.TM API LOGIC (ANTI-CORS & LEBIH STABIL) ---
         const API_BASE = 'https://api.mail.tm';
         let currentEmail = '';
+        let currentPassword = '';
         let currentToken = '';
-        let checkInterval;
         let countdownInterval;
-        let refreshTime = 10; // Detik
+        let knownEmailIds = new Set();
+        let isNotificationsEnabled = false;
 
         const emailInput = document.getElementById('emailInput');
         const inboxContainer = document.getElementById('inbox');
         const statusText = document.getElementById('statusText');
         const loadingIcon = document.getElementById('loadingIcon');
         const refreshProgress = document.getElementById('refreshProgress');
-        const emailCount = document.getElementById('emailCount');
 
-        // Render UI Kosong
-        function showEmptyInbox() {
-            inboxContainer.innerHTML = `
-                <div class="p-16 text-center text-gray-500 dark:text-gray-400 flex flex-col items-center">
-                    <i class="ph ph-envelope-open text-6xl mb-3 opacity-30"></i>
-                    <p class="text-lg">Kotak masuk Anda kosong</p>
-                    <p class="text-sm mt-2">Menunggu pesan masuk...</p>
-                </div>`;
-            emailCount.classList.add('hidden');
+        // Modals
+        function closeModals() {
+            document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
         }
 
-        // Generate Password Acak untuk Akun API
-        function generatePassword() {
-            return Math.random().toString(36).slice(-8) + "A1!";
+        // --- CORE API LOGIC ---
+        async function initApp() {
+            const savedEmail = localStorage.getItem('tm_email');
+            const savedPass = localStorage.getItem('tm_pass');
+
+            if (savedEmail && savedPass) {
+                // Coba pulihkan sesi dari LocalStorage
+                await authenticateAccount(savedEmail, savedPass, false);
+            } else {
+                // Buat baru jika tidak ada riwayat
+                await generateNewEmail();
+            }
         }
 
-        // Buat Email Baru
-        async function generateNewEmail() {
-            clearInterval(checkInterval);
+        async function generateNewEmail(forceNew = false) {
             clearInterval(countdownInterval);
-            
             emailInput.value = "Membuat alamat...";
-            statusText.innerText = "Meminta domain dari server...";
+            statusText.innerText = "Mendaftarkan akun baru...";
             loadingIcon.classList.add('animate-spin');
             showEmptyInbox();
-            refreshProgress.style.width = '0%';
             
             try {
-                // 1. Dapatkan Domain Tersedia
                 const domainRes = await fetch(`${API_BASE}/domains?page=1`);
                 const domainData = await domainRes.json();
                 const domain = domainData['hydra:member'][0].domain;
 
-                // 2. Buat Akun Acak
                 const randomName = Math.random().toString(36).substring(2, 10);
-                currentEmail = `${randomName}@${domain}`;
-                const password = generatePassword();
+                const newEmail = `${randomName}@${domain}`;
+                const newPass = Math.random().toString(36).slice(-8) + "A1!";
 
-                statusText.innerText = "Mendaftarkan email sementara...";
-
+                // Create Account
                 await fetch(`${API_BASE}/accounts`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address: currentEmail, password: password })
+                    body: JSON.stringify({ address: newEmail, password: newPass })
                 });
 
-                // 3. Dapatkan Token Autentikasi
-                const tokenRes = await fetch(`${API_BASE}/token`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address: currentEmail, password: password })
-                });
-                const tokenData = await tokenRes.json();
-                currentToken = tokenData.token;
-                
-                emailInput.value = currentEmail;
-                statusText.innerText = "Email aktif! Menunggu pesan...";
-                
-                // Mulai pengecekan inbox
-                checkInbox();
-                startCountdown();
-
+                await authenticateAccount(newEmail, newPass, true);
+                if (forceNew) showToast("Email baru berhasil dibuat!");
             } catch (err) {
-                emailInput.value = "Gagal memuat API!";
-                statusText.innerText = "Terjadi kesalahan jaringan.";
-                console.error("API Error:", err);
+                statusText.innerText = "Gagal membuat email. Coba lagi.";
             }
         }
 
-        // Cek Kotak Masuk
+        async function loginAccount() {
+            const email = document.getElementById('loginEmail').value.trim();
+            const pass = document.getElementById('loginPassword').value.trim();
+            if(!email || !pass) return showToast("Harap isi email dan password!");
+            
+            closeModals();
+            emailInput.value = "Memeriksa kredensial...";
+            const success = await authenticateAccount(email, pass, true);
+            if(success) {
+                showToast("Berhasil login ke riwayat lama!");
+            } else {
+                showToast("Login gagal! Email mungkin kedaluwarsa.");
+                emailInput.value = currentEmail; // Kembalikan teks input
+            }
+        }
+
+        async function authenticateAccount(email, password, isNewLogin = false) {
+            try {
+                const tokenRes = await fetch(`${API_BASE}/token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: email, password: password })
+                });
+
+                if (!tokenRes.ok) throw new Error("Unauthorized");
+
+                const tokenData = await tokenRes.json();
+                
+                // Update State
+                currentToken = tokenData.token;
+                currentEmail = email;
+                currentPassword = password;
+                
+                // Simpan ke LocalStorage agar auto-restore
+                localStorage.setItem('tm_email', currentEmail);
+                localStorage.setItem('tm_pass', currentPassword);
+
+                // Update UI
+                emailInput.value = currentEmail;
+                document.getElementById('displayCurrentEmail').innerText = currentEmail;
+                document.getElementById('displayCurrentPassword').innerText = currentPassword;
+                statusText.innerText = "Terhubung! Menunggu pesan masuk...";
+                
+                if(isNewLogin) knownEmailIds.clear();
+                
+                checkInbox();
+                startCountdown();
+                return true;
+            } catch (err) {
+                console.error("Auth failed", err);
+                if (!isNewLogin) {
+                    // Jika auto-restore gagal (akun expired di server), buat baru otomatis
+                    generateNewEmail();
+                }
+                return false;
+            }
+        }
+
+        // --- INBOX LOGIC ---
+        function showEmptyInbox() {
+            inboxContainer.innerHTML = `<div class="p-16 text-center text-gray-500"><i class="ph ph-envelope-open text-6xl mb-3 opacity-30"></i><p>Kotak masuk Anda kosong</p></div>`;
+            document.getElementById('emailCount').classList.add('hidden');
+        }
+
         async function checkInbox() {
             if(!currentToken) return;
             try {
@@ -227,30 +281,30 @@
                 });
                 const data = await res.json();
                 const emails = data['hydra:member'];
+                
+                let hasNew = false;
+                emails.forEach(e => {
+                    if (!knownEmailIds.has(e.id)) {
+                        knownEmailIds.add(e.id);
+                        hasNew = true;
+                    }
+                });
+
+                if (hasNew && emails.length > 0) playNotification(emails[0].from.address, emails[0].subject);
                 renderInbox(emails);
-            } catch (err) {
-                console.error("Gagal cek inbox", err);
-            }
+            } catch (err) {}
         }
 
-        // Render Daftar Email
         function renderInbox(emails) {
-            if (emails.length === 0) {
-                showEmptyInbox();
-                return;
-            }
-            
-            emailCount.innerText = `${emails.length} Pesan`;
-            emailCount.classList.remove('hidden');
+            if (emails.length === 0) return showEmptyInbox();
+            document.getElementById('emailCount').innerText = `${emails.length} Pesan`;
+            document.getElementById('emailCount').classList.remove('hidden');
 
             let html = '';
             emails.forEach(email => {
-                // Format Tanggal
-                const dateObj = new Date(email.createdAt);
-                const timeString = dateObj.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
-                
+                const timeString = new Date(email.createdAt).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
                 html += `
-                    <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group" onclick="readEmail('${email.id}')">
+                    <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group border-l-4 border-transparent hover:border-primary" onclick="readEmail('${email.id}')">
                         <div class="flex items-start gap-3 overflow-hidden">
                             <div class="bg-primary/10 text-primary p-3 rounded-full flex-shrink-0">
                                 <i class="ph-fill ph-envelope-simple text-xl"></i>
@@ -258,130 +312,92 @@
                             <div class="truncate">
                                 <h4 class="font-bold text-gray-800 dark:text-gray-100 truncate">${email.from.address}</h4>
                                 <p class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate">${email.subject || '(Tanpa Subjek)'}</p>
-                                <p class="text-xs text-gray-400 mt-1">${email.intro.substring(0, 50)}...</p>
                             </div>
                         </div>
                         <div class="flex items-center gap-4 flex-shrink-0">
-                            <span class="text-xs font-semibold text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">${timeString}</span>
+                            <span class="text-xs font-semibold text-gray-400">${timeString}</span>
                             <i class="ph ph-caret-right text-gray-300 group-hover:text-primary transition transform group-hover:translate-x-1"></i>
                         </div>
-                    </div>
-                `;
+                    </div>`;
             });
             inboxContainer.innerHTML = html;
         }
 
-        // Baca Isi Email
         async function readEmail(id) {
-            clearInterval(countdownInterval); // Hentikan refresh saat membaca
+            clearInterval(countdownInterval);
             refreshProgress.style.width = '0%';
-            statusText.innerText = "Membaca pesan...";
-
-            inboxContainer.innerHTML = `<div class="p-16 text-center text-primary"><i class="ph ph-spinner-gap animate-spin text-4xl mx-auto"></i><p class="mt-4">Memuat isi pesan...</p></div>`;
-            
+            inboxContainer.innerHTML = `<div class="p-16 text-center text-primary"><i class="ph ph-spinner-gap animate-spin text-4xl mx-auto"></i><p class="mt-4">Memuat pesan...</p></div>`;
             try {
-                const res = await fetch(`${API_BASE}/messages/${id}`, {
-                    headers: { 'Authorization': `Bearer ${currentToken}` }
-                });
-                const message = await res.json();
-                
-                const dateObj = new Date(message.createdAt);
-                const dateString = dateObj.toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute:'2-digit'});
-
-                // Mail.tm menyimpan HTML di array html
-                const bodyContent = message.html && message.html.length > 0 
-                    ? message.html[0] 
-                    : (message.text ? message.text.replace(/\n/g, '<br>') : 'Pesan kosong');
+                const res = await fetch(`${API_BASE}/messages/${id}`, { headers: { 'Authorization': `Bearer ${currentToken}` }});
+                const msg = await res.json();
+                const bodyContent = msg.html && msg.html.length > 0 ? msg.html[0] : (msg.text ? msg.text.replace(/\n/g, '<br>') : 'Pesan kosong');
 
                 inboxContainer.innerHTML = `
                     <div class="p-6 md:p-8">
-                        <div class="flex justify-between items-center mb-6">
-                            <button onclick="backToInbox()" class="text-primary hover:bg-primary/10 px-4 py-2 rounded-lg transition flex items-center gap-2 font-medium">
-                                <i class="ph ph-arrow-left"></i> Kembali
-                            </button>
-                            <button onclick="deleteEmail('${id}')" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 px-4 py-2 rounded-lg transition flex items-center gap-2 font-medium">
-                                <i class="ph ph-trash"></i> Hapus
-                            </button>
-                        </div>
-                        <h2 class="text-2xl md:text-3xl font-extrabold mb-4 text-gray-900 dark:text-white">${message.subject || '(Tanpa Subjek)'}</h2>
-                        <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl mb-6 flex flex-col md:flex-row md:justify-between md:items-center gap-2 border border-gray-100 dark:border-gray-700">
-                            <div>
-                                <span class="text-sm text-gray-500 block">Dari:</span>
-                                <span class="font-bold">${message.from.name || ''} &lt;${message.from.address}&gt;</span>
-                            </div>
-                            <div class="text-sm text-gray-500 font-medium bg-white dark:bg-darkcard px-3 py-1 rounded shadow-sm">
-                                ${dateString}
-                            </div>
+                        <button onclick="backToInbox()" class="text-primary hover:bg-primary/10 px-4 py-2 rounded-lg transition flex items-center gap-2 font-medium mb-6">
+                            <i class="ph ph-arrow-left"></i> Kembali
+                        </button>
+                        <h2 class="text-2xl font-extrabold mb-4">${msg.subject || '(Tanpa Subjek)'}</h2>
+                        <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-xl mb-6 flex justify-between items-center border border-gray-100 dark:border-gray-700">
+                            <div><span class="text-sm text-gray-500 block">Dari:</span><span class="font-bold">${msg.from.address}</span></div>
                         </div>
                         <div class="prose dark:prose-invert max-w-none break-words bg-white dark:bg-darkcard p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-inner overflow-x-auto">
                             ${bodyContent}
                         </div>
-                    </div>
-                `;
-            } catch (err) {
-                console.error(err);
-                inboxContainer.innerHTML = `<div class="p-8 text-center text-red-500">Gagal memuat pesan.</div>`;
-            }
+                    </div>`;
+            } catch (err) {}
         }
 
-        // Hapus Email
-        async function deleteEmail(id) {
-            try {
-                await fetch(`${API_BASE}/messages/${id}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${currentToken}` }
-                });
-                showToast("Email berhasil dihapus!");
-                backToInbox();
-            } catch (err) {
-                console.error("Gagal menghapus", err);
-            }
-        }
-
-        // Kembali ke list email
         function backToInbox() {
-            statusText.innerText = "Email aktif! Menunggu pesan...";
             checkInbox();
             startCountdown();
         }
 
-        // Timer Progress Bar untuk Refresh
         function startCountdown() {
             clearInterval(countdownInterval);
             let timer = 0;
-            const maxTime = refreshTime * 10; // 100 steps untuk animasi smooth
-
             countdownInterval = setInterval(() => {
                 timer++;
-                const percentage = (timer / maxTime) * 100;
-                refreshProgress.style.width = `${percentage}%`;
-
-                if (timer >= maxTime) {
-                    checkInbox();
-                    timer = 0; // Reset bar
-                }
+                refreshProgress.style.width = `${(timer / 100) * 100}%`;
+                if (timer >= 100) { checkInbox(); timer = 0; }
             }, 100);
         }
 
-        // Fitur Notifikasi Toast & Copy
+        // --- UTILITIES ---
         function showToast(msg) {
             const toast = document.getElementById('toast');
             document.getElementById('toastMessage').innerText = msg;
             toast.classList.add('show');
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 3000);
+            setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        function copyEmail() {
-            if(!currentEmail || currentEmail === "Membuat alamat...") return;
-            navigator.clipboard.writeText(currentEmail).then(() => {
-                showToast("Email berhasil disalin!");
-            });
+        function copyText(elementId, isInput = false) {
+            const text = isInput ? document.getElementById(elementId).value : document.getElementById(elementId).innerText;
+            if(!text || text.includes("Memuat") || text.includes("Menyambungkan")) return;
+            navigator.clipboard.writeText(text).then(() => showToast("Tersalin ke clipboard!"));
         }
 
-        // Inisialisasi saat web pertama kali dibuka
-        generateNewEmail();
+        function requestNotificationPermission() {
+            if ("Notification" in window) {
+                Notification.requestPermission().then(permission => {
+                    if (permission === "granted") {
+                        isNotificationsEnabled = true;
+                        document.getElementById('bellIcon').classList.replace('text-yellow-500', 'text-green-500');
+                        showToast("Notifikasi aktif!");
+                    }
+                });
+            }
+        }
+
+        function playNotification(from, subject) {
+            document.getElementById('notifySound').play().catch(()=>console.log("Audio blocked"));
+            if (isNotificationsEnabled && "Notification" in window && Notification.permission === "granted") {
+                new Notification("Email Masuk!", { body: `Dari: ${from}\nSubjek: ${subject || 'Tanpa subjek'}` });
+            }
+        }
+
+        // Mulai aplikasi
+        initApp();
     </script>
 </body>
 </html>
