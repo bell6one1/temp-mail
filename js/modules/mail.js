@@ -4,10 +4,12 @@ import { showToast, closeModals, playNotification } from './ui.js';
 import { mailtm } from '../providers/mailtm.js';
 import { mailgw } from '../providers/mailgw.js';
 import { onesecmail } from '../providers/onesecmail.js';
+import { guerrillamail } from '../providers/guerrillamail.js';
 import { customapi } from '../providers/customapi.js';
 
 // Daftarkan semua provider yang tersedia
 const providers = {
+    guerrillamail: guerrillamail,
     mailtm: mailtm,
     mailgw: mailgw,
     onesecmail: onesecmail,
