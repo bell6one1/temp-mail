@@ -1,7 +1,7 @@
 // js/modules/store.js
 
 export const store = {
-    currentProvider: 'mailtm', // Default menggunakan 'mailtm', cadangannya 'mailgw'
+    currentProvider: 'guerrillamail', // Default menggunakan 'guerrillamail', cadangannya 'mailgw'
     currentEmail: '',
     currentPassword: '',
     currentToken: '',
