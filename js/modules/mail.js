@@ -1,15 +1,19 @@
 // js/modules/mail.js
 import { store } from './store.js';
 import { showToast, closeModals, playNotification } from './ui.js';
+
+// Impor semua provider
+import { guerrillamail } from '../providers/guerrillamail.js';
+import { tempmaillol } from '../providers/tempmaillol.js';
 import { mailtm } from '../providers/mailtm.js';
 import { mailgw } from '../providers/mailgw.js';
 import { onesecmail } from '../providers/onesecmail.js';
-import { guerrillamail } from '../providers/guerrillamail.js';
 import { customapi } from '../providers/customapi.js';
 
 // Daftarkan semua provider yang tersedia
 const providers = {
     guerrillamail: guerrillamail,
+    tempmaillol: tempmaillol,
     mailtm: mailtm,
     mailgw: mailgw,
     onesecmail: onesecmail,
