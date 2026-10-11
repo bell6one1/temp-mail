@@ -2,7 +2,7 @@
 import { store } from './store.js';
 import { showToast, closeModals, playNotification } from './ui.js';
 
-// Impor semua provider
+// Impor semua provider yang kita miliki
 import { guerrillamail } from '../providers/guerrillamail.js';
 import { tempmaillol } from '../providers/tempmaillol.js';
 import { mailtm } from '../providers/mailtm.js';
@@ -10,7 +10,7 @@ import { mailgw } from '../providers/mailgw.js';
 import { onesecmail } from '../providers/onesecmail.js';
 import { customapi } from '../providers/customapi.js';
 
-// Daftarkan semua provider yang tersedia
+// Daftarkan semua provider
 const providers = {
     guerrillamail: guerrillamail,
     tempmaillol: tempmaillol,
@@ -24,50 +24,150 @@ function getActiveProvider() {
     return providers[store.currentProvider];
 }
 
-// Mesin otomatis penukar provider jika terjadi kegagalan sistem
-function switchProvider() {
-    const keys = Object.keys(providers);
-    const currentIndex = keys.indexOf(store.currentProvider);
-    const nextIndex = (currentIndex + 1) % keys.length;
-    
-    store.currentProvider = keys[nextIndex];
-    
-    // Reset data sesi karena server tujuan berganti
-    store.currentToken = '';
-    store.currentEmail = '';
-    store.currentPassword = '';
-    store.currentAccountId = '';
-    localStorage.removeItem('tm_email');
-    localStorage.removeItem('tm_pass');
-    store.knownEmailIds.clear();
-    
-    showToast(`Server utama sibuk. Mengalihkan ke ${providers[store.currentProvider].name}...`, "error");
-}
-
+// FITUR BARU: Mengambil semua domain dari SEMUA provider secara bersamaan
 export async function fetchAvailableDomains() {
     const domainSelect = document.getElementById('domainSelect');
-    let attempts = 0;
-    const maxAttempts = Object.keys(providers).length;
+    domainSelect.innerHTML = '<option value="">Mengumpulkan domain aktif...</option>';
 
-    while (attempts < maxAttempts) {
+    // Jalankan permintaan ke semua server secara paralel
+    const fetchPromises = Object.entries(providers).map(async ([key, provider]) => {
         try {
-            const p = getActiveProvider();
-            const domains = await p.getDomains();
-            
-            domainSelect.innerHTML = '';
-            domains.forEach(d => {
+            if(key === 'customapi') return { key, name: provider.name, domains: [] }; // Lewati template kosong
+            const domains = await provider.getDomains();
+            return { key, name: provider.name, domains };
+        } catch (error) {
+            // Jika satu server error (down), kita tangkap error-nya agar tidak merusak yang lain
+            return { key, name: provider.name, domains: [] }; 
+        }
+    });
+
+    const results = await Promise.all(fetchPromises);
+    domainSelect.innerHTML = ''; 
+
+    let totalDomains = 0;
+    results.forEach(result => {
+        if (result.domains && result.domains.length > 0) {
+            // Buat grup opsi (<optgroup>) agar tampilan UI rapi berdasarkan nama Provider
+            const optGroup = document.createElement('optgroup');
+            optGroup.label = result.name; 
+
+            result.domains.forEach(d => {
                 const opt = document.createElement('option');
-                opt.value = d;
+                // Simpan ID provider dan Domain di value (contoh: "mailtm:sharklasers.com")
+                opt.value = `${result.key}:${d}`; 
                 opt.innerText = `@${d}`;
-                domainSelect.appendChild(opt);
+                optGroup.appendChild(opt);
+                totalDomains++;
             });
-            return; // Sukses, keluar dari fungsi
-        } catch (err) {
-            attempts++;
-            switchProvider();
+            domainSelect.appendChild(optGroup);
+        }
+    });
+
+    if (totalDomains === 0) {
+        domainSelect.innerHTML = '<option value="">Semua jaringan server down</option>';
+    }
+}
+
+// Helper untuk auto-deteksi provider berdasarkan nama domain
+function detectProviderByDomain(domainToFind) {
+    const select = document.getElementById('domainSelect');
+    for (let i = 0; i < select.options.length; i++) {
+        const val = select.options[i].value;
+        if(val) {
+            const [providerKey, domain] = val.split(':');
+            if (domain === domainToFind) return providerKey;
         }
     }
-    domainSelect.innerHTML = '<option value="">Semua jaringan server down</option>';
+    return null;
+}
+
+export async function initApp() {
+    await fetchAvailableDomains();
+    const savedEmail = localStorage.getItem('tm_email');
+    const savedPass = localStorage.getItem('tm_pass');
+    
+    if (savedEmail && savedPass) {
+        const savedDomain = savedEmail.split('@')[1];
+        
+        // Sesuaikan Provider secara otomatis
+        const matchedProvider = detectProviderByDomain(savedDomain);
+        if (matchedProvider) store.currentProvider = matchedProvider;
+
+        // Ubah UI Dropdown agar sesuai dengan email yang tersimpan
+        const optionToSelect = Array.from(document.getElementById('domainSelect').options)
+                                    .find(opt => opt.value.endsWith(`:${savedDomain}`));
+        if (optionToSelect) document.getElementById('domainSelect').value = optionToSelect.value;
+
+        await authenticateAccount(savedEmail, savedPass, false);
+    } else {
+        await generateNewEmail();
+    }
+}
+
+export async function generateNewEmail(isManual = false) {
+    clearInterval(store.countdownInterval);
+    document.getElementById('emailInput').value = "Membuat alamat...";
+    document.getElementById('statusText').innerText = "Mendaftarkan akun...";
+    showEmptyInbox();
+    
+    let selectedValue = document.getElementById('domainSelect').value;
+    if (!selectedValue) {
+        await fetchAvailableDomains();
+        selectedValue = document.getElementById('domainSelect').value;
+    }
+
+    if (!selectedValue) {
+        document.getElementById('statusText').innerText = "Semua server gagal merespon.";
+        showToast("Gagal memuat domain!", "error");
+        return;
+    }
+
+    // Ekstrak nama provider dan domain yang dipilih oleh pengguna dari Dropdown
+    const [providerKey, domain] = selectedValue.split(':');
+    store.currentProvider = providerKey; // Ubah saklar mesin ke provider ini
+    const p = getActiveProvider();
+
+    let prefix = document.getElementById('customPrefix').value.trim();
+    if (!prefix) prefix = Math.random().toString(36).substring(2, 10);
+    prefix = prefix.replace(/[^a-zA-Z0-9.\-_]/g, '');
+
+    try {
+        const newEmail = `${prefix}@${domain}`;
+        const newPass = Math.random().toString(36).slice(-8) + "A1!";
+
+        await p.createAccount(newEmail, newPass);
+        await authenticateAccount(newEmail, newPass, true);
+        
+        if (isManual) showToast(`Email berhasil dibuat di ${p.name}!`);
+        document.getElementById('customPrefix').value = '';
+    } catch (err) {
+        document.getElementById('statusText').innerText = "Gagal. Nama mungkin sudah dipakai.";
+        if (isManual) showToast("Gagal membuat email di server ini!", "error");
+    }
+}
+
+export async function loginAccount() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const pass = document.getElementById('loginPassword').value.trim();
+    if(!email || !pass) return showToast("Isi email dan password!", "error");
+    
+    // Auto-deteksi provider dari form input pengguna
+    const domainPart = email.split('@')[1];
+    const matchedProvider = detectProviderByDomain(domainPart);
+    if (matchedProvider) store.currentProvider = matchedProvider;
+    
+    closeModals();
+    document.getElementById('emailInput').value = "Memeriksa kredensial...";
+    const success = await authenticateAccount(email, pass, true);
+    
+    if(success) {
+        const optionToSelect = Array.from(document.getElementById('domainSelect').options)
+                                    .find(opt => opt.value.endsWith(`:${domainPart}`));
+        if (optionToSelect) document.getElementById('domainSelect').value = optionToSelect.value;
+        showToast(`Berhasil login via ${getActiveProvider().name}!`);
+    } else {
+        showToast("Login gagal! Sesi mungkin kedaluwarsa.", "error");
+    }
 }
 
 export async function authenticateAccount(email, password, isNewLogin = false) {
@@ -79,7 +179,7 @@ export async function authenticateAccount(email, password, isNewLogin = false) {
         const tokenData = await p.getToken(email, password);
         
         store.currentToken = tokenData.token;
-        store.currentAccountId = tokenData.id;
+        store.currentAccountId = tokenData.id || '';
         store.currentEmail = email;
         store.currentPassword = password;
         
@@ -101,66 +201,8 @@ export async function authenticateAccount(email, password, isNewLogin = false) {
     }
 }
 
-export async function generateNewEmail(isManual = false) {
-    clearInterval(store.countdownInterval);
-    document.getElementById('emailInput').value = "Membuat alamat...";
-    document.getElementById('statusText').innerText = "Mendaftarkan akun...";
-    showEmptyInbox();
-    
-    let attempts = 0;
-    const maxAttempts = Object.keys(providers).length;
-
-    while (attempts < maxAttempts) {
-        try {
-            const p = getActiveProvider();
-            let domain = document.getElementById('domainSelect').value;
-            if (!domain) {
-                await fetchAvailableDomains();
-                domain = document.getElementById('domainSelect').value;
-            }
-
-            let prefix = document.getElementById('customPrefix').value.trim();
-            if (!prefix) prefix = Math.random().toString(36).substring(2, 10);
-            prefix = prefix.replace(/[^a-zA-Z0-9.\-_]/g, '');
-
-            const newEmail = `${prefix}@${domain}`;
-            const newPass = Math.random().toString(36).slice(-8) + "A1!";
-
-            await p.createAccount(newEmail, newPass);
-            await authenticateAccount(newEmail, newPass, true);
-            
-            if (isManual) showToast(`Email berhasil dibuat di ${p.name}!`);
-            document.getElementById('customPrefix').value = '';
-            return;
-        } catch (err) {
-            attempts++;
-            switchProvider();
-            await fetchAvailableDomains(); // Ambil domain baru dari provider baru
-        }
-    }
-    document.getElementById('statusText').innerText = "Semua server gagal merespon.";
-    showToast("Gagal total membuat email di semua provider!", "error");
-}
-
-export async function loginAccount() {
-    const email = document.getElementById('loginEmail').value.trim();
-    const pass = document.getElementById('loginPassword').value.trim();
-    if(!email || !pass) return showToast("Isi email dan password!", "error");
-    
-    closeModals();
-    document.getElementById('emailInput').value = "Memeriksa kredensial...";
-    const success = await authenticateAccount(email, pass, true);
-    if(success) {
-        const loggedDomain = email.split('@')[1];
-        if (loggedDomain) document.getElementById('domainSelect').value = loggedDomain;
-        showToast("Berhasil login!");
-    } else {
-        showToast("Login gagal! Sesi mungkin kedaluwarsa.", "error");
-    }
-}
-
 export async function deleteAccount() {
-    if (!confirm("Hapus akun secara permanen?")) return;
+    if (!confirm("PERINGATAN: Ini akan menghapus alamat email dan SEMUA pesan Anda secara permanen. Lanjutkan?")) return;
     showToast("Menghancurkan akun...");
     try {
         const p = getActiveProvider();
@@ -171,7 +213,7 @@ export async function deleteAccount() {
             localStorage.removeItem('tm_email');
             localStorage.removeItem('tm_pass');
             generateNewEmail();
-        } else { throw new Error(); }
+        } else { throw new Error("Gagal"); }
     } catch (err) { showToast("Gagal menghancurkan akun!", "error"); }
 }
 
@@ -199,9 +241,7 @@ export async function checkInbox() {
 
         if (hasNew && emails.length > 0) playNotification(emails[0].from.address, emails[0].subject);
         renderInbox(emails);
-    } catch (err) {
-        // Abaikan error background polling senyap untuk menjaga kenyamanan UX
-    }
+    } catch (err) {}
 }
 
 export function renderInbox(emails) {
