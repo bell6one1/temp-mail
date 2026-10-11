@@ -1,6 +1,7 @@
 // js/providers/mailtm.js
 const BASE = 'https://api.mail.tm';
-const PROXY = 'https://corsproxy.io/?';
+// Menggunakan proxy AllOrigins sebagai pengganti corsproxy.io
+const PROXY = 'https://api.allorigins.win/raw?url=';
 
 export const mailtm = {
     name: 'Mail.tm (Utama)',

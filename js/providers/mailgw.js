@@ -1,6 +1,7 @@
 // js/providers/mailgw.js
 const BASE = 'https://api.mail.gw';
-const PROXY = 'https://corsproxy.io/?';
+// Menggunakan proxy AllOrigins sebagai pengganti corsproxy.io
+const PROXY = 'https://api.allorigins.win/raw?url=';
 
 export const mailgw = {
     name: 'Mail.gw (Cadangan)',
